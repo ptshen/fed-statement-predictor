@@ -1,1 +1,1 @@
-historical statements are parsed from this Github repo: https://github.com/vtasca/fed-statement-scraping
+historical transcripts are found here on the official FED website: https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm
