@@ -1,1 +1,1 @@
-historical statements are parsed from this Github repo: https://github.com/vtasca/fed-statement-scraping
+Historical press conference transcripts are parsed from the Federal Reserve website
