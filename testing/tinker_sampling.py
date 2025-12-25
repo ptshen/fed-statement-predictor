@@ -17,11 +17,12 @@ from finetune.tinker_finetune import model_name, lora_rank
 
 # Configuration
 checkpoint_info_file = "../finetune/checkpoint_info.txt"
+output_dir = "output"  # Directory to save generated samples
 
 # Inference hyperparameters
 max_tokens = 2048
 temperature = 0.7
-num_samples = 2
+num_samples = 5
 
 
 def load_checkpoint_path(checkpoint_info_file: str) -> str:
@@ -159,7 +160,8 @@ def sample_from_model(
     user_prompt: str,
     max_tokens: int,
     temperature: float,
-    num_samples: int
+    num_samples: int,
+    output_dir: str = output_dir
 ):
     """
     Load the fine-tuned model and run inference.
@@ -221,14 +223,38 @@ def sample_from_model(
     print("Generated Response(s)")
     print("=" * 60)
     
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save each sample to a file
+    saved_files = []
     for i, seq in enumerate(result.sequences, 1):
         response_text = tokenizer.decode(seq.tokens)
         print(f"\nSample {i}:")
         print("-" * 60)
         print(response_text)
         print("-" * 60)
+        
+        # Save to file
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"sample_{i:03d}_{timestamp}.md"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"# Generated Sample {i}\n\n")
+            f.write(f"**Generated at:** {datetime.now().isoformat()}\n")
+            f.write(f"**Temperature:** {temperature}\n")
+            f.write(f"**Max Tokens:** {max_tokens}\n\n")
+            f.write("---\n\n")
+            f.write(response_text)
+        
+        saved_files.append(filepath)
+        print(f"  ✓ Saved to: {filepath}")
     
-    return result
+    print(f"\n✓ All {len(saved_files)} samples saved to {os.path.abspath(output_dir)}/")
+    
+    return result, saved_files
 
 
 def main():
@@ -246,19 +272,24 @@ def main():
         # Load prompts
         system_prompt, user_prompt = load_prompts(user_prompt_file, system_prompt_file)
         
+        # Resolve output directory path
+        output_dir_path = os.path.join(script_dir, output_dir)
+        
         # Run inference
-        result = sample_from_model(
+        result, saved_files = sample_from_model(
             checkpoint_path=checkpoint_path,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
-            num_samples=num_samples
+            num_samples=num_samples,
+            output_dir=output_dir_path
         )
         
         print("\n" + "=" * 60)
         print("Inference completed!")
         print("=" * 60)
+        print(f"\nSaved {len(saved_files)} sample(s) to {output_dir_path}/")
         
     except Exception as e:
         print(f"\n✗ Error during inference: {e}")

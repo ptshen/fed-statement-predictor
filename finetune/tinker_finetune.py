@@ -14,8 +14,6 @@ from tinker import types
 from tinker_cookbook.hyperparam_utils import get_lora_lr_over_full_finetune_lr
 from transformers import AutoTokenizer
 import numpy as np
-import urllib.request
-from pathlib import Path
 
  
 # Configuration
@@ -199,48 +197,6 @@ def extract_model_id_from_path(checkpoint_path: str) -> str:
     return ""
 
 
-def download_checkpoint(checkpoint_path: str, service_client, output_dir: str = "checkpoints"):
-    """
-    Download a checkpoint from Tinker to local storage.
-    
-    Args:
-        checkpoint_path: Tinker path (e.g., "tinker://<model_id>/<name>")
-        service_client: Tinker ServiceClient instance
-        output_dir: Local directory to save the checkpoint
-    """
-    try:
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Create REST client to get download URL
-        rest_client = service_client.create_rest_client()
-        
-        # Get the signed URL for downloading
-        print(f"  Getting download URL for {checkpoint_path}...")
-        future = rest_client.get_checkpoint_archive_url_from_tinker_path(checkpoint_path)
-        checkpoint_archive_url_response = future.result()
-        
-        # Extract checkpoint name from path for filename
-        checkpoint_name = checkpoint_path.split("/")[-1] if "/" in checkpoint_path else checkpoint_path.replace("tinker://", "")
-        output_file = os.path.join(output_dir, f"{checkpoint_name}.tar")
-        
-        # Download the checkpoint
-        print(f"  Downloading to {output_file}...")
-        print(f"  URL expires at: {checkpoint_archive_url_response.expires}")
-        urllib.request.urlretrieve(checkpoint_archive_url_response.url, output_file)
-        
-        print(f"✓ Checkpoint downloaded successfully!")
-        print(f"  Local path: {os.path.abspath(output_file)}")
-        print(f"  File size: {os.path.getsize(output_file) / (1024*1024):.2f} MB")
-        
-        return output_file
-    except Exception as e:
-        print(f"✗ Error downloading checkpoint: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
-
-
 def main():
     """Main training function."""
     print("=" * 60)
@@ -305,7 +261,7 @@ def main():
     
     # Save the fine-tuned weights and optimizer state
     print("\n" + "=" * 60)
-    print("Saving and Downloading Fine-tuned Weights")
+    print("Saving Fine-tuned Weights")
     print("=" * 60)
     
     checkpoint_name = "fomc-transcripts-lora"
@@ -321,9 +277,8 @@ def main():
         print(f"  Full state checkpoint path: {full_state_path}")
         print(f"  Note: This checkpoint includes optimizer state and can be used to resume training")
         
-        # Also save sampler weights for downloading
-        # The download API only works with sampler weights checkpoints
-        print(f"\nSaving sampler weights checkpoint for downloading...")
+        # Also save sampler weights for inference
+        print(f"\nSaving sampler weights checkpoint for inference...")
         sampler_save_result = training_client.save_weights_for_sampler(name=f"{checkpoint_name}-sampler").result()
         sampler_path = sampler_save_result.path
         print("✓ Sampler weights checkpoint saved!")
@@ -341,181 +296,34 @@ def main():
             f.write(f"=== FULL STATE CHECKPOINT (for resuming training) ===\n")
             f.write(f"Path: {full_state_path}\n")
             f.write(f"Type: Weights + Optimizer State\n")
-            f.write(f"Use for: Resuming training with load_state()\n")
-            f.write(f"Download: NO (download API doesn't support full state)\n\n")
-            f.write(f"=== SAMPLER WEIGHTS CHECKPOINT (for downloading) ===\n")
+            f.write(f"Use for: Resuming training with load_state()\n\n")
+            f.write(f"=== SAMPLER WEIGHTS CHECKPOINT (for inference) ===\n")
             f.write(f"Path: {sampler_path}\n")
             f.write(f"Type: Sampler Weights Only\n")
-            f.write(f"Use for: Downloading and inference\n")
-            f.write(f"Download: YES - Use this path for downloading!\n\n")
-            f.write(f"To download via CLI:\n")
-            f.write(f"  tinker checkpoint download {sampler_path}\n")
+            f.write(f"Use for: Inference and sampling\n")
         print(f"  Checkpoint info saved to: {checkpoint_info_file}")
-        print(f"\n  ⚠️  IMPORTANT: Use the SAMPLER path for downloading!")
-        print(f"     Full state path: {full_state_path}")
-        print(f"     Sampler path (for download): {sampler_path}")
-        
-        # Download the sampler weights (download API only works with sampler weights)
-        print(f"\nDownloading checkpoint weights...")
-        downloaded_file = download_checkpoint(sampler_path, service_client, output_dir="checkpoints")
+        print(f"\n  Full state path: {full_state_path}")
+        print(f"  Sampler path (for inference): {sampler_path}")
         
         print("\n" + "=" * 60)
-        print("Training and Download Completed Successfully!")
+        print("Training Completed Successfully!")
         print("=" * 60)
         print(f"\nSummary:")
         print(f"  ✓ Training completed")
         print(f"  ✓ Full state checkpoint saved: {full_state_path}")
         print(f"    (Use this to resume training with: training_client.load_state('{full_state_path}'))")
         print(f"  ✓ Sampler weights checkpoint saved: {sampler_path}")
-        print(f"  ✓ Checkpoint downloaded: {downloaded_file}")
+        print(f"    (Use this for inference and sampling)")
         print(f"  ✓ Checkpoint info saved: {checkpoint_info_file}")
         
     except Exception as e:
-        print(f"\n✗ Error during save/download process: {e}")
+        print(f"\n✗ Error during save process: {e}")
         import traceback
         traceback.print_exc()
-        print("\nNote: Training completed, but checkpoint save/download failed.")
-        print("You can try to download later using:")
-        print("  python tinker_finetune.py download")
+        print("\nNote: Training completed, but checkpoint save failed.")
         raise
 
 
-def download_only(checkpoint_path: str = None, checkpoint_name: str = "fomc-transcripts-lora", output_dir: str = "checkpoints"):
-    """
-    Download an existing checkpoint without training.
-    
-    Args:
-        checkpoint_path: Full Tinker path (e.g., "tinker://<model_id>/<name>") - if provided, this is used directly
-        checkpoint_name: Name of the checkpoint (used if checkpoint_path is not provided)
-        output_dir: Local directory to save the checkpoint
-    """
-    print("=" * 60)
-    print("Downloading FOMC Transcript LoRA Checkpoint")
-    print("=" * 60)
-    
-    # Initialize service client
-    service_client = tinker.ServiceClient()
-    
-    # Try to load checkpoint info from file first
-    checkpoint_info_file = "checkpoint_info.txt"
-    if checkpoint_path is None and os.path.exists(checkpoint_info_file):
-        print(f"\nFound checkpoint info file: {checkpoint_info_file}")
-        with open(checkpoint_info_file, "r") as f:
-            for line in f:
-                if line.startswith("Checkpoint Path:"):
-                    checkpoint_path = line.split(":", 1)[1].strip()
-                    print(f"  Loaded checkpoint path: {checkpoint_path}")
-                    break
-    
-    # If checkpoint_path is still not provided, try to construct it
-    if checkpoint_path is None:
-        print(f"\nConstructing checkpoint path for: {checkpoint_name}")
-        print("  (This requires the same model and rank configuration)")
-        
-        # Create a training client to get the model_id (same as used during training)
-        training_client = service_client.create_lora_training_client(
-            base_model=model_name,
-            rank=lora_rank
-        )
-        
-        # Get the model_id and construct the path
-        model_id = training_client._guaranteed_model_id()
-        checkpoint_path = f"tinker://{model_id}/{checkpoint_name}"
-        print(f"  Constructed path: {checkpoint_path}")
-        print(f"  Model ID: {model_id}")
-    else:
-        print(f"\nUsing checkpoint path: {checkpoint_path}")
-        model_id = extract_model_id_from_path(checkpoint_path)
-        if model_id:
-            print(f"  Model ID: {model_id}")
-    
-    # Download the checkpoint
-    try:
-        download_checkpoint(checkpoint_path, service_client, output_dir)
-        print("\n" + "=" * 60)
-        print("Download completed!")
-        print("=" * 60)
-    except Exception as e:
-        print(f"\n✗ Error: Could not download checkpoint")
-        print(f"  Path: {checkpoint_path}")
-        print(f"  Error: {e}")
-        print("\nHow to get the model_id:")
-        print("  1. Check checkpoint_info.txt (created during training)")
-        print("  2. Use the full checkpoint path from training output")
-        print("  3. Use: python tinker_finetune.py download <full_path>")
-        print("  4. Or list checkpoints using REST client:")
-        print("     rest_client = service_client.create_rest_client()")
-        print(f"     checkpoints = rest_client.list_checkpoints('{model_id}').result()")
-        raise
-
-
-def create_sampler_checkpoint_from_existing(checkpoint_name: str = "fomc-transcripts-lora"):
-    """
-    Create a sampler weights checkpoint from an existing training run.
-    This is useful if you only saved the full state checkpoint and need to download.
-    """
-    print("=" * 60)
-    print("Creating Sampler Weights Checkpoint for Download")
-    print("=" * 60)
-    
-    service_client = tinker.ServiceClient()
-    
-    # Create a training client with the same configuration
-    print(f"\nCreating training client with same config...")
-    training_client = service_client.create_lora_training_client(
-        base_model=model_name,
-        rank=lora_rank
-    )
-    
-    # Load the existing full state checkpoint if it exists
-    # First, try to get the checkpoint path from the info file
-    checkpoint_info_file = "checkpoint_info.txt"
-    full_state_path = None
-    
-    if os.path.exists(checkpoint_info_file):
-        with open(checkpoint_info_file, "r") as f:
-            for line in f:
-                if "Full State Path:" in line or "Checkpoint Path:" in line:
-                    full_state_path = line.split(":", 1)[1].strip()
-                    break
-    
-    if full_state_path:
-        print(f"\nFound existing checkpoint: {full_state_path}")
-        print("Loading checkpoint state...")
-        try:
-            training_client.load_state(full_state_path)
-            print("✓ Checkpoint loaded successfully!")
-        except Exception as e:
-            print(f"⚠️  Could not load checkpoint (this is okay if training is still active): {e}")
-            print("   Continuing to create sampler checkpoint from current state...")
-    
-    # Now save the sampler weights checkpoint
-    sampler_name = f"{checkpoint_name}-sampler"
-    print(f"\nSaving sampler weights checkpoint: {sampler_name}...")
-    sampler_result = training_client.save_weights_for_sampler(name=sampler_name).result()
-    sampler_path = sampler_result.path
-    
-    print("✓ Sampler weights checkpoint created!")
-    print(f"  Sampler checkpoint path: {sampler_path}")
-    
-    # Update checkpoint info file
-    model_id = extract_model_id_from_path(sampler_path)
-    with open(checkpoint_info_file, "a") as f:
-        f.write(f"\n=== SAMPLER WEIGHTS CHECKPOINT (for downloading) ===\n")
-        f.write(f"Path: {sampler_path}\n")
-        f.write(f"Type: Sampler Weights Only\n")
-        f.write(f"Use for: Downloading and inference\n")
-        f.write(f"Download: YES - Use this path for downloading!\n\n")
-        f.write(f"To download via CLI:\n")
-        f.write(f"  tinker checkpoint download {sampler_path}\n")
-    
-    print(f"\n✓ Checkpoint info updated in: {checkpoint_info_file}")
-    print(f"\nYou can now download using:")
-    print(f"  tinker checkpoint download {sampler_path}")
-    print(f"\nOr use the Python script:")
-    print(f"  python tinker_finetune.py download {sampler_path}")
-    
-    return sampler_path
 
 
 def get_checkpoint_info(checkpoint_name: str = "fomc-transcripts-lora"):
@@ -547,33 +355,15 @@ def get_checkpoint_info(checkpoint_name: str = "fomc-transcripts-lora"):
     checkpoint_path = f"tinker://{model_id}/{checkpoint_name}"
     print(f"✓ Checkpoint path: {checkpoint_path}")
     
-    # Try to verify the checkpoint exists by attempting to get download URL
-    print(f"\nVerifying checkpoint exists...")
-    try:
-        rest_client = service_client.create_rest_client()
-        future = rest_client.get_checkpoint_archive_url_from_tinker_path(checkpoint_path)
-        response = future.result()
-        print(f"✓ Checkpoint verified! URL expires at: {response.expires}")
-        
-        # Save the info to file
-        checkpoint_info_file = "checkpoint_info.txt"
-        with open(checkpoint_info_file, "w") as f:
-            f.write(f"Checkpoint Name: {checkpoint_name}\n")
-            f.write(f"Checkpoint Path: {checkpoint_path}\n")
-            f.write(f"Model ID: {model_id}\n")
-        print(f"\n✓ Checkpoint info saved to: {checkpoint_info_file}")
-        
-        return checkpoint_path, model_id
-    except Exception as e:
-        print(f"✗ Could not verify checkpoint: {e}")
-        print(f"\nThe checkpoint might:")
-        print(f"  1. Have a different name (not '{checkpoint_name}')")
-        print(f"  2. Have expired or been deleted")
-        print(f"  3. Be from a different training run")
-        print(f"\nTry listing all checkpoints for this model_id:")
-        print(f"  rest_client = service_client.create_rest_client()")
-        print(f"  checkpoints = rest_client.list_checkpoints('{model_id}').result()")
-        raise
+    # Save the info to file
+    checkpoint_info_file = "checkpoint_info.txt"
+    with open(checkpoint_info_file, "w") as f:
+        f.write(f"Checkpoint Name: {checkpoint_name}\n")
+        f.write(f"Checkpoint Path: {checkpoint_path}\n")
+        f.write(f"Model ID: {model_id}\n")
+    print(f"\n✓ Checkpoint info saved to: {checkpoint_info_file}")
+    
+    return checkpoint_path, model_id
 
 
 def list_checkpoints_for_model():
@@ -653,25 +443,10 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         command = sys.argv[1]
         
-        if command == "download":
-            # If a full path is provided (starts with "tinker://"), use it directly
-            if len(sys.argv) > 2 and sys.argv[2].startswith("tinker://"):
-                checkpoint_path = sys.argv[2]
-                download_only(checkpoint_path=checkpoint_path)
-            else:
-                # Otherwise use as checkpoint name
-                checkpoint_name = sys.argv[2] if len(sys.argv) > 2 else "fomc-transcripts-lora"
-                download_only(checkpoint_name=checkpoint_name)
-        
-        elif command == "info":
+        if command == "info":
             # Get checkpoint information
             checkpoint_name = sys.argv[2] if len(sys.argv) > 2 else "fomc-transcripts-lora"
             get_checkpoint_info(checkpoint_name)
-        
-        elif command == "create-sampler":
-            # Create a sampler checkpoint from existing training
-            checkpoint_name = sys.argv[2] if len(sys.argv) > 2 else "fomc-transcripts-lora"
-            create_sampler_checkpoint_from_existing(checkpoint_name)
         
         elif command == "list":
             # List all checkpoints
@@ -679,10 +454,9 @@ if __name__ == "__main__":
         
         else:
             print("Usage:")
-            print("  python tinker_finetune.py              # Run training")
-            print("  python tinker_finetune.py download     # Download checkpoint")
-            print("  python tinker_finetune.py info         # Get checkpoint info")
-            print("  python tinker_finetune.py list         # List all checkpoints")
+            print("  python tinker_finetune.py        # Run training")
+            print("  python tinker_finetune.py info   # Get checkpoint info")
+            print("  python tinker_finetune.py list   # List all checkpoints")
     else:
         main()
 
