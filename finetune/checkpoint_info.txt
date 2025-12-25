@@ -1,0 +1,14 @@
+Checkpoint Name: fomc-transcripts-lora
+Checkpoint Path: tinker://cf5160a1-ff15-5e5e-a7e7-ebd32ce0f3cb:train:0/weights/fomc-transcripts-lora
+Model ID: cf5160a1-ff15-5e5e-a7e7-ebd32ce0f3cb:train:0
+Checkpoint Type: Full State (weights + optimizer state)
+Can Resume Training: Yes
+
+=== SAMPLER WEIGHTS CHECKPOINT (for downloading) ===
+Path: tinker://5fda2a95-efeb-5e25-b701-011ae60c0895:train:0/sampler_weights/fomc-transcripts-lora-sampler
+Type: Sampler Weights Only
+Use for: Downloading and inference
+Download: YES - Use this path for downloading!
+
+To download via CLI:
+  tinker checkpoint download tinker://5fda2a95-efeb-5e25-b701-011ae60c0895:train:0/sampler_weights/fomc-transcripts-lora-sampler
